@@ -1,0 +1,66 @@
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.venv.bak/
+pip-log.txt
+pip-selfcheck.json
+.python-version
+.eggs/
+*.egg-info/
+.eggs/
+.egg/
+
+# Dependencies
+requirements.txt.bak
+requirements-dev.txt
+requirements-test.txt
+Pipfile
+Pipfile.lock
+
+# Distribution / packaging
+dist/
+build/
+*.egg
+*.tar.gz
+*.whl
+*.zip
+*.tar
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+
+# Testing
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+.hypothesis/
+
+# Security
+.secret
+.token
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Icon?
+```
+
+Wait, let me reconsider this. The only added files are `ai_news_agent.py` (Python source), `requirements.txt` (dependency file), and modified `README.md`. There are no build artifacts, compiled files, or temporary files in the changes. This appears to be a standard Python project with source files only.
+
+```
+
+```
