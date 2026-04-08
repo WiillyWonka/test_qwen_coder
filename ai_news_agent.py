@@ -25,6 +25,10 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from requests_oauthlib import OAuth2Session
+
+# LangChain tool imports
+from langchain_core.tools import Tool
 
 # RSS ленты источников новостей об ИИ
 AI_NEWS_RSS_FEEDS = [
@@ -51,6 +55,51 @@ class GoogleCalendarAssistant:
         self.token_file = token_file
         self.service = None
         self.SCOPES = ['https://www.googleapis.com/auth/calendar']
+        self.llm_agent = None
+        self._setup_langchain_agent()
+    
+    def _setup_langchain_agent(self):
+        """Настройка LangChain агента с инструментом создания мероприятия"""
+        
+        # Создаем инструмент для создания мероприятия
+        create_event_tool = Tool(
+            name="create_calendar_event",
+            description="Создает мероприятие в Google Календаре. Принимает JSON с полями: title (название), date (дата в формате YYYY-MM-DD), start_time (время начала в формате HH:MM), end_time (время окончания в формате HH:MM), description (описание)",
+            func=self._create_event_from_json
+        )
+        
+        self.tools = [create_event_tool]
+    
+    def _create_event_from_json(self, json_input: str) -> str:
+        """
+        Создание мероприятия из JSON строки (для использования в LangChain tool)
+        
+        Args:
+            json_input: JSON строка с информацией о мероприятии
+            
+        Returns:
+            Строка с результатом создания мероприятия
+        """
+        import json
+        try:
+            event_data = json.loads(json_input)
+            
+            # Конвертируем данные в формат для create_event
+            if 'date' in event_data and isinstance(event_data['date'], str):
+                from datetime import datetime
+                event_data['date'] = datetime.strptime(event_data['date'], '%Y-%m-%d').date()
+            
+            result = self.create_event(event_data)
+            
+            if result:
+                return f"Мероприятие '{result['title']}' успешно создано. Ссылка: {result['link']}"
+            else:
+                return "Ошибка при создании мероприятия"
+                
+        except json.JSONDecodeError as e:
+            return f"Ошибка парсинга JSON: {e}"
+        except Exception as e:
+            return f"Ошибка: {e}"
     
     def authenticate(self) -> bool:
         """
@@ -242,6 +291,68 @@ class GoogleCalendarAssistant:
             return None
         except Exception as e:
             print(f"Неожиданная ошибка: {e}")
+            return None
+    
+    def create_agent_with_llm(self, llm):
+        """
+        Создание LangChain агента с LLM для обработки естественного языка
+        
+        Args:
+            llm: Языковая модель (ChatOpenAI, ChatAnthropic и т.д.)
+        
+        Returns:
+            None (агент сохраняется в self.llm_agent)
+        """
+        from langchain.agents import create_agent
+        from langchain_core.prompts import ChatPromptTemplate
+        
+        # Создаем промпт для агента
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """Ты помощник для создания мероприятий в Google Календаре.
+Используй инструмент create_calendar_event для создания мероприятий.
+Извлеки из сообщения пользователя информацию о мероприятии и передай её в формате JSON:
+{{"title": "название", "date": "YYYY-MM-DD", "start_time": "HH:MM", "end_time": "HH:MM", "description": "описание"}}"""),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}"),
+        ])
+        
+        # Создаем агента
+        agent = create_agent(
+            llm=llm,
+            tools=self.tools,
+            prompt=prompt
+        )
+        
+        self.llm_agent = agent
+        return agent
+    
+    def process_message_with_agent(self, message: str) -> Optional[str]:
+        """
+        Обработка сообщения через LangChain агента
+        
+        Args:
+            message: Текст сообщения от пользователя
+            
+        Returns:
+            Результат выполнения или None если агент не инициализирован
+        """
+        if not self.llm_agent:
+            return None
+        
+        try:
+            from langchain.agents import AgentExecutor
+            
+            # Создаем executor для запуска агента
+            agent_executor = AgentExecutor(
+                agent=self.llm_agent,
+                tools=self.tools,
+                verbose=False
+            )
+            
+            result = agent_executor.invoke({"input": message})
+            return result.get("output", "Мероприятие создано")
+        except Exception as e:
+            print(f"Ошибка при обработке сообщения агентом: {e}")
             return None
 
 
@@ -476,7 +587,7 @@ class TelegramBot:
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        Обработчик текстовых сообщений для создания мероприятий в календаре
+        Обработчик текстовых сообщений для создания мероприятий в календаре через LangChain агента и tool
         """
         if not self.calendar_assistant:
             return
@@ -490,36 +601,46 @@ class TelegramBot:
             await update.message.reply_text("⏳ Обрабатываю запрос на создание мероприятия...")
             
             try:
-                # Извлекаем информацию о мероприятии из сообщения
-                event_data = self.calendar_assistant.parse_event_from_message(message_text)
+                # Пытаемся использовать LangChain агента если он доступен
+                result = None
+                if self.calendar_assistant.llm_agent:
+                    result = self.calendar_assistant.process_message_with_agent(message_text)
                 
-                if event_data:
-                    # Формируем подтверждение для пользователя
-                    confirm_text = f"📅 Планируется создание мероприятия:\n\n"
-                    confirm_text += f"📌 Название: {event_data.get('title', 'Не указано')}\n"
-                    confirm_text += f"📅 Дата: {event_data.get('date', datetime.now().date())}\n"
-                    confirm_text += f"⏰ Время: {event_data.get('start_time', 'Не указано')} - {event_data.get('end_time', 'Не указано')}\n\n"
+                # Если агент не вернул результат или не инициализирован, используем прямой парсинг
+                if not result:
+                    # Извлекаем информацию о мероприятии из сообщения
+                    event_data = self.calendar_assistant.parse_event_from_message(message_text)
                     
-                    await update.message.reply_text(confirm_text)
-                    
-                    # Создаем мероприятие в Google Календаре
-                    created_event = self.calendar_assistant.create_event(event_data)
-                    
-                    if created_event:
-                        success_text = f"✅ Мероприятие успешно создано!\n\n"
-                        success_text += f"📌 {created_event['title']}\n"
-                        success_text += f"🔗 Ссылка: {created_event['link']}"
-                        await update.message.reply_text(success_text)
+                    if event_data:
+                        # Формируем подтверждение для пользователя
+                        confirm_text = f"📅 Планируется создание мероприятия:\n\n"
+                        confirm_text += f"📌 Название: {event_data.get('title', 'Не указано')}\n"
+                        confirm_text += f"📅 Дата: {event_data.get('date', datetime.now().date())}\n"
+                        confirm_text += f"⏰ Время: {event_data.get('start_time', 'Не указано')} - {event_data.get('end_time', 'Не указано')}\n\n"
+                        
+                        await update.message.reply_text(confirm_text)
+                        
+                        # Создаем мероприятие в Google Календаре
+                        created_event = self.calendar_assistant.create_event(event_data)
+                        
+                        if created_event:
+                            success_text = f"✅ Мероприятие успешно создано!\n\n"
+                            success_text += f"📌 {created_event['title']}\n"
+                            success_text += f"🔗 Ссылка: {created_event['link']}"
+                            await update.message.reply_text(success_text)
+                        else:
+                            await update.message.reply_text(
+                                "❌ Не удалось создать мероприятие. "
+                                "Убедитесь, что файл credentials.json настроен правильно."
+                            )
                     else:
                         await update.message.reply_text(
-                            "❌ Не удалось создать мероприятие. "
-                            "Убедитесь, что файл credentials.json настроен правильно."
+                            "❌ Не удалось распознать информацию о мероприятии. "
+                            "Попробуйте указать название, дату и время более явно."
                         )
                 else:
-                    await update.message.reply_text(
-                        "❌ Не удалось распознать информацию о мероприятии. "
-                        "Попробуйте указать название, дату и время более явно."
-                    )
+                    # Результат от LangChain агента
+                    await update.message.reply_text(result)
                     
             except Exception as e:
                 await update.message.reply_text(f"❌ Произошла ошибка: {e}")
@@ -649,6 +770,11 @@ async def main():
             token_file='token.json'
         )
         print("✅ Google Calendar ассистент инициализирован.")
+        
+        # Инициализируем LangChain агента с LLM для обработки естественного языка
+        if llm:
+            calendar_assistant.create_agent_with_llm(llm)
+            print("✅ LangChain агент для календаря инициализирован.")
     else:
         print("⚠️  Файл credentials.json не найден. Функция создания мероприятий в календаре будет недоступна.")
         print("   Для включения создайте проект в Google Cloud Console и получите OAuth2 credentials.")
