@@ -47,6 +47,19 @@ ollama run llama3
 ```
 В коде раскомментируйте блок "ВАРИАНТ 3" в функции `create_llm()`.
 
+#### DeepSeek
+DeepSeek API совместим с OpenAI, поэтому используется тот же пакет:
+```bash
+export DEEPSEEK_API_KEY='ваш_ключ_deepseek'
+```
+Получить API ключ можно на [platform.deepseek.com](https://platform.deepseek.com/).
+
+В коде раскомментируйте блок "ВАРИАНТ 4" в функции `create_llm()`.
+
+Доступные модели:
+- `deepseek-chat` - основная разговорная модель
+- `deepseek-coder` - специализированная модель для кода
+
 ## Запуск
 
 ```bash
