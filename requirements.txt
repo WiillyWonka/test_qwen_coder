@@ -5,6 +5,9 @@ langchain-core>=0.1.0
 python-telegram-bot>=20.0
 feedparser>=6.0.0
 aiohttp>=3.8.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0
 
 # Опционально - для использования реальных LLM:
 # langchain-openai>=0.0.5  # Для OpenAI GPT и DeepSeek (API-совместим)
