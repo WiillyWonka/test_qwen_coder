@@ -291,6 +291,7 @@ def create_llm():
     - OpenAI
     - Anthropic Claude
     - Ollama (локальная)
+    - DeepSeek
     """
     
     # ВАРИАНТ 1: OpenAI GPT
@@ -315,6 +316,15 @@ def create_llm():
     #     model="llama3",
     #     temperature=0.3,
     #     base_url="http://localhost:11434"
+    # )
+    
+    # ВАРИАНТ 4: DeepSeek (API-совместим с OpenAI)
+    # from langchain_openai import ChatOpenAI
+    # return ChatOpenAI(
+    #     model="deepseek-chat",  # или "deepseek-coder" для кодерской версии
+    #     temperature=0.3,
+    #     api_key=os.getenv("DEEPSEEK_API_KEY"),
+    #     base_url="https://api.deepseek.com/v1"
     # )
     
     # По умолчанию используем заглушку (для тестирования)
